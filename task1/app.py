@@ -153,7 +153,12 @@ with col_menu:
             }
 
 # the map rendering
-m = folium.Map(location=sppg_coord, zoom_start=14)
+m = folium.Map(location=sppg_coord, zoom_start=14, tiles=None)
+folium.TileLayer(
+    tiles="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+    referrer_policy="strict-origin"
+).add_to(m)
 
 folium.Marker(
     sppg_coord,

@@ -38,7 +38,15 @@ Run the Streamlit app from your terminal:
 ```bash
 streamlit run app.py
 ```
-This will open the simulator in your browser at `http://localhost:8501`.
+
+If your terminal says `streamlit: command not found`, run this instead:
+
+```bash
+python -m streamlit run app.py
+```
+
+Open your browser at `http://localhost:8501`.
+
 
 ## How to Use the Simulator
 
