@@ -2,6 +2,7 @@
 
 ## Member
 Rida BINDECH / 5999261011
+
 Emmanuel SANTINI / 5999261124
 
 # Task 1 : Traveling Salesman Problem
