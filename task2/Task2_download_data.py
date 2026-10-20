@@ -1,60 +1,108 @@
 import json
-import osmnx as ox
+import math
+import os
+import requests
 
-# Coordinates of the center of Surabaya and radius (16 km)
-surabaya_center = (-7.2575, 112.7521)
-radius_meters = 16000
-custom_filter = '["highway"~"trunk|primary|secondary|tertiary"]'
+# Bounding box autour de Surabaya
+BBOX = (-7.33, 112.70, -7.22, 112.82)
 
-print("Downloading the Surabaya road network via OSMnx...")
-G = ox.graph_from_point(
-    surabaya_center,
-    dist=radius_meters,
-    network_type="drive",
-    custom_filter=custom_filter,
-)
+def haversine(lat1, lon1, lat2, lon2):
+    x = math.radians(lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
+    y = math.radians(lat2 - lat1)
+    return 6371.0 * math.hypot(x, y)
 
-nodes = {}
-for node, data in G.nodes(data=True):
-    nodes[str(node)] = [data['y'], data['x']]
+def fetch_osm_raw_data():
+    # Filtrage restreint aux axes principaux pour éviter l'explosion du nombre de rues
+    query = f"""
+    [out:json][timeout:60];
+    (
+      way["highway"~"^(trunk|primary|secondary|tertiary)$"]{BBOX};
+    );
+    out body center;
+    >;
+    out skel qt;
+    """
+    headers = {"User-Agent": "DLH-ChinesePostman-Surabaya/1.0"}
+    endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.openstreetmap.fr/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+    ]
+    for url in endpoints:
+        try:
+            print(f"Tentative de téléchargement via {url}...")
+            response = requests.post(url, data={"data": query}, headers=headers, timeout=60)
+            if response.status_code == 200:
+                return response.json()
+        except Exception:
+            continue
+    raise RuntimeError("Impossible de récupérer les données depuis les serveurs Overpass.")
 
-edges = {}
-edge_names = {}
-edge_geometries = {}  # Pour stocker les points intermédiaires de la courbe de la rue
+def process_and_save():
+    raw_data = fetch_osm_raw_data()
+    all_osm_nodes = {}
+    road_ways = []
 
-for u, v, key, data in G.edges(keys=True, data=True):
-    u_str = str(u)
-    v_str = str(v)
-    weight = data.get('length', 1.0)
-    
-    edges.setdefault(u_str, {})[v_str] = weight
-    
-    # Récupération propre du nom de la rue
-    name = data.get("name", "Unnamed road")
-    if isinstance(name, list):
-        name = ", ".join(name)
-    edge_names.setdefault(u_str, {})[v_str] = name
+    for element in raw_data.get("elements", []):
+        if element["type"] == "node":
+            all_osm_nodes[element["id"]] = (element["lat"], element["lon"])
+        elif element["type"] == "way":
+            if "highway" in element.get("tags", {}):
+                road_ways.append(element)
 
-    # Extraction de la géométrie détaillée (courbes de la route) si disponible
-    if "geometry" in data:
-        # geometry.coords donne une liste de (lon, lat), on convertit en [lat, lon] pour Folium
-        geom_coords = [[coord[1], coord[0]] for coord in data["geometry"].coords]
-        edge_geometries.setdefault(u_str, {})[v_str] = geom_coords
-    else:
-        # Fallback sur les points de début et de fin si pas de géométrie spécifique
-        edge_geometries.setdefault(u_str, {})[v_str] = [nodes[u_str], nodes[v_str]]
+    edges = {}
+    nodes = {}
+    edge_names = {}
 
-dataset = {
-    "nodes": nodes,
-    "edges": edges,
-    "edge_names": edge_names,
-    "edge_geometries": edge_geometries
-}
+    for way in road_ways:
+        nodes_sequence = way["nodes"]
+        tags = way.get("tags", {})
+        name = tags.get("name", "Unnamed road")
+        oneway = tags.get("oneway", "no")
 
-output_path = "surabaya_map.json"
-with open(output_path, "w", encoding="utf-8") as f:
-    json.dump(dataset, f)
+        for i in range(len(nodes_sequence) - 1):
+            u_id = nodes_sequence[i]
+            v_id = nodes_sequence[i + 1]
 
-print(f"File '{output_path}' successfully generated with precise street geometries!")
-print(f"- Nodes: {len(nodes)}")
-print(f"- Edges: {len(edges)}")
+            if u_id not in all_osm_nodes or v_id not in all_osm_nodes:
+                continue
+
+            u, v = str(u_id), str(v_id)
+            lat1, lon1 = all_osm_nodes[u_id]
+            lat2, lon2 = all_osm_nodes[v_id]
+            dist = haversine(lat1, lon1, lat2, lon2)
+
+            nodes[u] = [lat1, lon1]
+            nodes[v] = [lat2, lon2]
+
+            edges.setdefault(u, {})
+            edge_names.setdefault(u, {})
+
+            if oneway == "-1":
+                edges.setdefault(v, {})[u] = dist
+                edge_names.setdefault(v, {})[u] = name
+            elif oneway in ("yes", "true", "1"):
+                edges[u][v] = dist
+                edge_names[u][v] = name
+            else:
+                edges[u][v] = dist
+                edges.setdefault(v, {})[u] = dist
+                edge_names[u][v] = name
+                edge_names.setdefault(v, {})[u] = name
+
+    dataset = {
+        "nodes": nodes,
+        "edges": edges,
+        "edge_names": edge_names
+    }
+
+    output_path = "surabaya_map.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(dataset, f)
+
+    print(f"Fichier '{output_path}' généré avec succès !")
+    print(f"- Nœuds : {len(nodes)}")
+    print(f"- Arêtes : {len(edges)}")
+
+if __name__ == "__main__":
+    process_and_save()
