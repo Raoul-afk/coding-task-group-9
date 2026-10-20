@@ -87,7 +87,7 @@ Ensure you have Python 3.9+ installed.
 
 Install the required dependencies using:
 ```bash
-pip install -r requirements
+pip install -r task2/requirements
 ```
 
 Key packages utilized:
@@ -109,13 +109,13 @@ Rebuilding the map dataset is optional, as `surabaya_map.json` is already bundle
 
 To regenerate the network dataset from OpenStreetMap, execute:
 ```bash
-python Task2_download_data.py
+python task2/Task2_download_data.py
 ```
 
 ### 2. Launch the Application
 Start the simulator using Streamlit:
 ```bash
-streamlit run Task2_Chinese_Postman.py
+streamlit run task2/Task2_Chinese_Postman.py
 ```
 The interface will automatically open in your default browser at `http://localhost:8501`.
 
