@@ -229,6 +229,3 @@ Run:
 ```bash
 python -m unittest test_knights_tour.py
 ```
-
-## AI usage disclosure
-The assignment asks for honest disclosure of AI use and the prompt history. Document the assistance used to develop and test the algorithm, and attach the relevant prompt history as required by the course instructions.
