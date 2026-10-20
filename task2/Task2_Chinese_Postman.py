@@ -60,7 +60,7 @@ with col_menu:
 
         base_node = find_nearest_node(depot_coord[0], depot_coord[1], nodes)
 
-        # 1. Sélection stricte des nœuds dans le rayon
+        # 1. Sélection stricte des nœuds dans le rayon géographique du cercle
         local_nodes = {
             nid for nid, coord in nodes.items()
             if haversine(depot_coord[0], depot_coord[1], coord[0], coord[1]) <= radius_km
@@ -74,7 +74,7 @@ with col_menu:
                 if valid_neighbors:
                     sub_edges[u] = valid_neighbors
 
-        # 2. Isolation propre du composant connexe accessible depuis le dépôt dans les deux sens
+        # 2. Vérification de la connexité locale sans déborder sur toute la carte
         rev_edges = {}
         for u in sub_edges:
             for v, w in sub_edges[u].items():
@@ -82,9 +82,13 @@ with col_menu:
 
         dists_out, _ = dijkstra(sub_edges, base_node)
         dists_in, _ = dijkstra(rev_edges, base_node)
+        
+        # On prend uniquement ce qui est accessible depuis le dépôt dans le sous-graphe local
         connected_nodes = set(dists_out.keys()) & set(dists_in.keys())
         if len(connected_nodes) < 2:
             connected_nodes = set(dists_out.keys())
+        if len(connected_nodes) < 2:
+            connected_nodes = set(sub_edges.keys())
 
         sub_edges = {
             u: {v: w for v, w in neighbors.items() if v in connected_nodes}
@@ -104,7 +108,6 @@ with col_menu:
 
             balanced_edges = {u: dict(v_dict) for u, v_dict in sub_edges.items()}
 
-            # Limitation de sécurité pour éviter les boucles infinies d'équilibrage
             for _ in range(200):
                 imbalance = {n: in_deg[n] - out_deg[n] for n in connected_nodes if in_deg[n] != out_deg[n]}
                 if not imbalance:
@@ -134,7 +137,7 @@ with col_menu:
                 eulerian_path = hierholzer(balanced_edges, base_node)
 
                 gps_route = []
-                total_dist_meters = 0.0
+                total_dist_km = 0.0
 
                 for i in range(len(eulerian_path) - 1):
                     u_node = eulerian_path[i]
@@ -143,7 +146,7 @@ with col_menu:
                     if u_node in edges and v_node in edges[u_node]:
                         if u_node in nodes:
                             gps_route.append(nodes[u_node])
-                        total_dist_meters += edges[u_node][v_node]
+                        total_dist_km += edges[u_node][v_node]
                     else:
                         dists_p, parents_p = dijkstra(edges, u_node)
                         if v_node in dists_p:
@@ -151,21 +154,15 @@ with col_menu:
                             for nid in sub_path[:-1]:
                                 if nid in nodes:
                                     gps_route.append(nodes[nid])
-                            total_dist_meters += dists_p[v_node]
+                            total_dist_km += dists_p[v_node]
                         else:
                             if u_node in nodes:
                                 gps_route.append(nodes[u_node])
                             if u_node in nodes and v_node in nodes:
-                                total_dist_meters += haversine(nodes[u_node][0], nodes[u_node][1], nodes[v_node][0], nodes[v_node][1]) * 1000
+                                total_dist_km += haversine(nodes[u_node][0], nodes[u_node][1], nodes[v_node][0], nodes[v_node][1])
 
                 if eulerian_path and eulerian_path[-1] in nodes:
                     gps_route.append(nodes[eulerian_path[-1]])
-
-                # Conversion des mètres en kilomètres (si les poids d'OSMnx sont en mètres)
-                # Si ton fichier utilise des kilomètres, ajuste cette division.
-                total_dist_km = total_dist_meters / 1000.0
-                if total_dist_km > 1000: # Sécurité si les données étaient déjà en km
-                    total_dist_km = total_dist_meters
 
                 exec_time = (time.perf_counter() - t_start) * 1000
                 estimated_travel_time_min = (total_dist_km / 25.0) * 60.0
@@ -243,3 +240,4 @@ with col_map:
             st.session_state.lon = c_lon
             st.session_state.result = None
             st.rerun()
+            
