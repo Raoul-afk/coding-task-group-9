@@ -5,8 +5,6 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 import sys
-import os
-
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -21,26 +19,21 @@ from graph_engines import (
 st.set_page_config(layout="wide", page_title="DLH Waste Collection - Chinese Postman")
 st.title("DLH Waste Collection Simulator (Chinese Postman Problem)")
 
-
-
 @st.cache_data
 def load_data():
-    # Construit le chemin absolu vers le fichier JSON dans le même dossier que le script
     file_path = os.path.join(os.path.dirname(__file__), "surabaya_map.json")
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
 try:
     data = load_data()
-    nodes = data["nodes"]       # Format: {node_id: [lat, lon], ...}
-    edges = data["edges"]       # Format: {u: {v: weight, ...}, ...}
-    edge_names = data.get("edge_names", {})  # Street names extracted from OSMnx
+    nodes = data["nodes"]
+    edges = data["edges"]
+    edge_names = data.get("edge_names", {})
 except Exception as e:
     st.error(f"Error loading data: {e}")
     st.stop()
 
-# DLH Depot Coordinates
 if "lat" not in st.session_state:
     st.session_state.lat = -7.280000
 if "lon" not in st.session_state:
@@ -65,19 +58,15 @@ with col_menu:
     if st.button("Generate collection route", type="primary"):
         t_start = time.perf_counter()
 
-        # 1. Network node closest to the DLH depot
         base_node = find_nearest_node(depot_coord[0], depot_coord[1], nodes)
 
-        # 2. STRICT filtering of nodes within the geographical circle (Haversine)
+        # 1. Sélection stricte des nœuds dans le rayon
         local_nodes = {
             nid for nid, coord in nodes.items()
             if haversine(depot_coord[0], depot_coord[1], coord[0], coord[1]) <= radius_km
         }
-
-        # Guaranteed inclusion of the depot node
         local_nodes.add(base_node)
 
-        # 3. Subgraph strictly restricted to these nodes
         sub_edges = {}
         for u in local_nodes:
             if u in edges:
@@ -85,9 +74,17 @@ with col_menu:
                 if valid_neighbors:
                     sub_edges[u] = valid_neighbors
 
-        # Isolation of the component connected to the depot
-        dists_depot, _ = dijkstra(sub_edges, base_node)
-        connected_nodes = set(dists_depot.keys())
+        # 2. Isolation propre du composant connexe accessible depuis le dépôt dans les deux sens
+        rev_edges = {}
+        for u in sub_edges:
+            for v, w in sub_edges[u].items():
+                rev_edges.setdefault(v, {})[u] = w
+
+        dists_out, _ = dijkstra(sub_edges, base_node)
+        dists_in, _ = dijkstra(rev_edges, base_node)
+        connected_nodes = set(dists_out.keys()) & set(dists_in.keys())
+        if len(connected_nodes) < 2:
+            connected_nodes = set(dists_out.keys())
 
         sub_edges = {
             u: {v: w for v, w in neighbors.items() if v in connected_nodes}
@@ -98,7 +95,6 @@ with col_menu:
         if not connected_nodes or len(connected_nodes) < 2:
             st.warning("No accessible streets within this radius around the depot.")
         else:
-            # 4. Balancing the directed graph (Chinese Postman Problem)
             in_deg = {n: 0 for n in connected_nodes}
             out_deg = {n: 0 for n in connected_nodes}
             for u, neighbors in sub_edges.items():
@@ -108,7 +104,8 @@ with col_menu:
 
             balanced_edges = {u: dict(v_dict) for u, v_dict in sub_edges.items()}
 
-            for _ in range(1000):
+            # Limitation de sécurité pour éviter les boucles infinies d'équilibrage
+            for _ in range(200):
                 imbalance = {n: in_deg[n] - out_deg[n] for n in connected_nodes if in_deg[n] != out_deg[n]}
                 if not imbalance:
                     break
@@ -136,22 +133,39 @@ with col_menu:
             try:
                 eulerian_path = hierholzer(balanced_edges, base_node)
 
-                # 6. GPS route plotting and direct distance calculation via Haversine
                 gps_route = []
-                total_dist_km = 0.0
+                total_dist_meters = 0.0
 
                 for i in range(len(eulerian_path) - 1):
                     u_node = eulerian_path[i]
                     v_node = eulerian_path[i + 1]
 
-                    coord_u = nodes[u_node]
-                    coord_v = nodes[v_node]
+                    if u_node in edges and v_node in edges[u_node]:
+                        if u_node in nodes:
+                            gps_route.append(nodes[u_node])
+                        total_dist_meters += edges[u_node][v_node]
+                    else:
+                        dists_p, parents_p = dijkstra(edges, u_node)
+                        if v_node in dists_p:
+                            sub_path = get_path(parents_p, v_node)
+                            for nid in sub_path[:-1]:
+                                if nid in nodes:
+                                    gps_route.append(nodes[nid])
+                            total_dist_meters += dists_p[v_node]
+                        else:
+                            if u_node in nodes:
+                                gps_route.append(nodes[u_node])
+                            if u_node in nodes and v_node in nodes:
+                                total_dist_meters += haversine(nodes[u_node][0], nodes[u_node][1], nodes[v_node][0], nodes[v_node][1]) * 1000
 
-                    gps_route.append(coord_u)
-                    total_dist_km += haversine(coord_u[0], coord_u[1], coord_v[0], coord_v[1])
-
-                if eulerian_path:
+                if eulerian_path and eulerian_path[-1] in nodes:
                     gps_route.append(nodes[eulerian_path[-1]])
+
+                # Conversion des mètres en kilomètres (si les poids d'OSMnx sont en mètres)
+                # Si ton fichier utilise des kilomètres, ajuste cette division.
+                total_dist_km = total_dist_meters / 1000.0
+                if total_dist_km > 1000: # Sécurité si les données étaient déjà en km
+                    total_dist_km = total_dist_meters
 
                 exec_time = (time.perf_counter() - t_start) * 1000
                 estimated_travel_time_min = (total_dist_km / 25.0) * 60.0
@@ -167,21 +181,19 @@ with col_menu:
             except Exception as ex:
                 st.error(f"Error generating the circuit: {ex}")
 
-# Map Display (Esri Tiles)
+# Affichage de la carte
 m = folium.Map(location=depot_coord, zoom_start=14, tiles=None)
 folium.TileLayer(
     tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
     attr="Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom"
 ).add_to(m)
 
-# DLH Truck Depot Marker
 folium.Marker(
     depot_coord,
     popup="DLH Truck Depot",
     icon=folium.Icon(color="green", icon="truck", prefix="fa")
 ).add_to(m)
 
-# Intervention zone circle
 folium.Circle(
     depot_coord,
     radius=radius_km * 1000,
@@ -203,7 +215,6 @@ if st.session_state.result is not None:
 
         st.subheader("Traversed streets (Routing order):")
         
-        # Convert node path into a list of consecutive street names
         street_sequence = []
         path_nodes = res["eulerian_path"]
         for i in range(len(path_nodes) - 1):
@@ -212,13 +223,11 @@ if st.session_state.result is not None:
             s_name = edge_names.get(u_n, {}).get(v_n, "Unnamed road")
             street_sequence.append(s_name)
 
-        # Group consecutive segments of the same street for clean display
         cleaned_streets = []
         for street in street_sequence:
             if not cleaned_streets or cleaned_streets[-1] != street:
                 cleaned_streets.append(street)
 
-        # Display the first 30 streets of the tour
         for idx, street_name in enumerate(cleaned_streets[:30]):
             st.write(f"**{idx + 1}.** {street_name}")
         if len(cleaned_streets) > 30:
