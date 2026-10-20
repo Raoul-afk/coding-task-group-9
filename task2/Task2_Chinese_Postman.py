@@ -4,8 +4,13 @@ import time
 import folium
 import streamlit as st
 from streamlit_folium import st_folium
+import sys
+import os
 
-from graph_engine import (
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from graph_engines import (
     dijkstra,
     find_nearest_node,
     get_path,
@@ -17,9 +22,12 @@ st.set_page_config(layout="wide", page_title="DLH Waste Collection - Chinese Pos
 st.title("DLH Waste Collection Simulator (Chinese Postman Problem)")
 
 
+
 @st.cache_data
 def load_data():
-    with open("surabaya_map.json", "r", encoding="utf-8") as f:
+    # Construit le chemin absolu vers le fichier JSON dans le même dossier que le script
+    file_path = os.path.join(os.path.dirname(__file__), "surabaya_map.json")
+    with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
