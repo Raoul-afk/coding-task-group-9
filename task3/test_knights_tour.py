@@ -1,6 +1,6 @@
 """Basic automated verification for the Knight's Tour project."""
 import unittest
-from knights_tour import knights_tour
+from task3.knights_tour import knights_tour
 
 
 def is_valid_tour(columns, rows, start, path):
