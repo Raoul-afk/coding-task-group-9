@@ -6,10 +6,6 @@ This application simulates mealbox delivery routes from an SPPG center to nearby
 
 Make sure you have Python 3.9+ installed.
 
-## Prerequisites
-
-Make sure you have Python 3.9+ installed.
-
 First, navigate to the `task1` directory:
 ```bash
 cd task1
