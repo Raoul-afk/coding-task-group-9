@@ -8,7 +8,7 @@ Ensure you have Python 3.9+ installed.
 
 Install the required dependencies using:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements
 ```
 
 Key packages utilized:
