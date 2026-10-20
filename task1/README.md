@@ -6,6 +6,15 @@ This application simulates mealbox delivery routes from an SPPG center to nearby
 
 Make sure you have Python 3.9+ installed.
 
+## Prerequisites
+
+Make sure you have Python 3.9+ installed.
+
+First, navigate to the `task1` directory:
+```bash
+cd task1
+```
+
 Install the required packages using:
 ```bash
 pip install -r requirements.txt
@@ -24,6 +33,11 @@ The packages used are:
 - `data/surabaya_data.json`: The pre-processed dataset with road nodes, edges, and schools around Surabaya.
 
 ## How to Run
+
+> **Important :** Ensure your terminal is positioned inside the `task1/` directory before running any commands.
+> ```bash
+> cd task1
+> ```
 
 ### 1. Data Setup
 You do not need to download the data again. The dataset `data/surabaya_data.json` is already included in the repository.
